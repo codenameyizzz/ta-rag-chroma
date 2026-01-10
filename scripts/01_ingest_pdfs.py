@@ -55,6 +55,26 @@ def extract_pdf(pdf_path: Path):
             pages.append((i + 1, t))
     return pages
 
+def infer_doc_type(filename: str) -> str:
+    f = filename.lower()
+    if "wisata" in f:
+        return "wisata"
+    if "akomodasi" in f or "hotel" in f:
+        return "akomodasi"
+    if "transport" in f:
+        return "transportasi"
+    if "cafe" in f:
+        return "cafe"
+    if "rumah makan" in f:
+        return "rumah_makan"
+    if "pusat oleh oleh" in f or "oleh" in f:
+        return "oleh_oleh"
+    if "fasum" in f or "fasilitas" in f:
+        return "fasum"
+    if "profile" in f or "profil" in f:
+        return "profil"
+    return "lainnya"
+
 
 def main():
     if not DATA_DIR.exists():
@@ -66,7 +86,17 @@ def main():
 
     # --- Chroma persistent client ---
     client = chromadb.PersistentClient(path=CHROMA_DIR)
-    col = client.get_or_create_collection(name=COLLECTION_NAME)
+    # col = client.get_or_create_collection(name=COLLECTION_NAME)
+
+    try:
+        client.delete_collection(COLLECTION_NAME)
+    except Exception:
+        pass
+
+    col = client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"}
+    )
 
     # --- Embedding model ---
     embedder = SentenceTransformer(EMBED_MODEL)
@@ -81,13 +111,16 @@ def main():
         for page_no, page_text in pages:
             chunks = chunk_text(page_text, CHUNK_SIZE, OVERLAP)
             for c_idx, ch in enumerate(chunks):
-                doc_id = f"{pdf.name}::p{page_no}::c{c_idx}::{uuid.uuid4().hex[:8]}"
+                # doc_id = f"{pdf.name}::p{page_no}::c{c_idx}::{uuid.uuid4().hex[:8]}"
+                doc_id = f"{pdf.name}::p{page_no}::c{c_idx}"
                 all_ids.append(doc_id)
                 all_texts.append(ch)
+                doc_type = infer_doc_type(pdf.name)
                 all_metas.append({
                     "source_file": pdf.name,
                     "page": page_no,
-                    "chunk": c_idx
+                    "chunk": c_idx,
+                    "doc_type": doc_type
                 })
 
     print(f"Total chunks: {len(all_texts)}")

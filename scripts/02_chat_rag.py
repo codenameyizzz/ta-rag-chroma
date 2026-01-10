@@ -1,4 +1,3 @@
-from pathlib import Path
 import numpy as np
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -17,6 +16,45 @@ TOP_K = 6
 MAX_CONTEXT_CHARS = 12000
 
 
+def route_doc_types(q: str):
+    ql = q.lower()
+    if "itinerary" in ql or "hari" in ql or "malam" in ql:
+        # itinerary butuh campuran kategori
+        return ["wisata", "akomodasi", "cafe", "rumah_makan", "transportasi"]
+
+    want = []
+    if "wisata" in ql or "destinasi" in ql:
+        want.append("wisata")
+    if "hotel" in ql or "akomodasi" in ql or "penginapan" in ql:
+        want.append("akomodasi")
+    if "cafe" in ql:
+        want.append("cafe")
+    if "rumah makan" in ql or "restoran" in ql or "kuliner" in ql:
+        want.append("rumah_makan")
+    if "transport" in ql or "angkutan" in ql or "bus" in ql:
+        want.append("transportasi")
+    if "oleh" in ql or "oleh-oleh" in ql or "souvenir" in ql:
+        want.append("oleh_oleh")
+    if "fasum" in ql or "fasilitas" in ql:
+        want.append("fasum")
+    return want  # bisa kosong => fallback all
+
+
+def dedup_docs(docs, metas, limit=10):
+    out_docs, out_metas = [], []
+    seen = set()
+    for d, m in zip(docs, metas):
+        key = (m.get("source_file"), m.get("page"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out_docs.append(d)
+        out_metas.append(m)
+        if len(out_docs) >= limit:
+            break
+    return out_docs, out_metas
+
+
 def build_context(docs, metas):
     parts = []
     total = 0
@@ -28,6 +66,33 @@ def build_context(docs, metas):
         parts.append(block)
         total += len(block)
     return "\n\n".join(parts)
+
+
+def retrieve(col, q_emb, doc_types, top_k=TOP_K):
+    docs, metas = [], []
+
+    if not doc_types:
+        res = col.query(
+            query_embeddings=q_emb,
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"]
+        )
+        docs = res["documents"][0]
+        metas = res["metadatas"][0]
+        return docs, metas
+
+    per_k = max(2, top_k // len(doc_types))
+    for dt in doc_types:
+        res = col.query(
+            query_embeddings=q_emb,
+            n_results=per_k,
+            where={"doc_type": dt},
+            include=["documents", "metadatas", "distances"]
+        )
+        docs.extend(res["documents"][0])
+        metas.extend(res["metadatas"][0])
+
+    return docs, metas
 
 
 @torch.inference_mode()
@@ -43,7 +108,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL)
     model = AutoModelForCausalLM.from_pretrained(
         LLM_MODEL,
-        torch_dtype="auto",
+        dtype="auto",          # ganti dari torch_dtype agar tidak warning
         device_map="auto"
     ).eval()
 
@@ -57,21 +122,24 @@ def main():
         q_emb = embedder.encode([q], normalize_embeddings=True)
         q_emb = np.asarray(q_emb, dtype=np.float32).tolist()
 
-        res = col.query(
-            query_embeddings=q_emb,
-            n_results=TOP_K,
-            include=["documents", "metadatas", "distances"]
-        )
+        doc_types = route_doc_types(q)
+        docs, metas = retrieve(col, q_emb, doc_types, top_k=TOP_K)
 
-        docs = res["documents"][0]
-        metas = res["metadatas"][0]
+        # dedup + build context
+        docs, metas = dedup_docs(docs, metas, limit=10)
         context = build_context(docs, metas)
 
         system = (
-            "Kamu adalah asisten sistem rekomendasi pariwisata Danau Toba. "
-            "Gunakan KONTEKS sebagai sumber utama. "
-            "Jika jawabannya tidak ada di konteks, katakan 'data tidak tersedia'. "
-            "Jawab Bahasa Indonesia, ringkas, dan jelas."
+            "Kamu adalah asisten perencana itinerary Danau Toba.\n"
+            "ATURAN KETAT:\n"
+            "1) Semua nama tempat/objek wisata/hotel/restoran yang kamu sebut harus ada di KONTEKS.\n"
+            "2) Kamu boleh membuat narasi dan susunan itinerary secara kreatif, tapi fakta (nama, lokasi, fasilitas, harga) hanya dari KONTEKS.\n"
+            "3) Jika KONTEKS tidak cukup untuk memenuhi permintaan (mis. kurang tempat), tulis 'data tidak tersedia' dan jelaskan kekurangannya.\n"
+            "FORMAT OUTPUT:\n"
+            "- Judul itinerary\n"
+            "- Hari 1 s.d Hari N (pagi/siang/sore/malam)\n"
+            "- Catatan penting\n"
+            "- Sumber: daftar source_file + page yang dipakai\n"
         )
 
         user = f"KONTEKS:\n{context}\n\nPERTANYAAN:\n{q}"
@@ -92,19 +160,20 @@ def main():
 
         out = model.generate(
             **inputs,
-            max_new_tokens=280,
+            max_new_tokens=900,
             do_sample=True,
-            temperature=0.7,
-            top_p=0.9
+            temperature=0.6,
+            top_p=0.9,
+            repetition_penalty=1.15
         )
 
         answer_ids = out[0][inputs["input_ids"].shape[-1]:]
         ans = tokenizer.decode(answer_ids, skip_special_tokens=True).strip()
 
         print("\nAssistant>\n" + ans)
-        print("\nSumber konteks (Top-K):")
+        print("\nSumber konteks (Top-K after routing+dedup):")
         for m in metas:
-            print(f"- {m.get('source_file')} page {m.get('page')} chunk {m.get('chunk')}")
+            print(f"- {m.get('source_file')} page {m.get('page')} chunk {m.get('chunk')} (type={m.get('doc_type')})")
         print()
 
 
