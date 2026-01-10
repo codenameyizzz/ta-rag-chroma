@@ -1,0 +1,9 @@
+chromadb
+pymupdf
+numpy
+tqdm
+torch
+transformers>=4.51.0
+accelerate
+sentence-transformers
+sentencepiece

@@ -1,0 +1,6 @@
+store_dir: "stores/chroma"
+collection: "toba_places"
+data_dir: "data/raw"
+n_results: 6
+chunk_size: 900
+chunk_overlap: 150
