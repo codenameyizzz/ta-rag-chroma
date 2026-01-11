@@ -39,6 +39,44 @@ def route_doc_types(q: str):
         want.append("fasum")
     return want  # bisa kosong => fallback all
 
+def detect_mode(q: str) -> str:
+    ql = q.lower()
+    itinerary_keywords = [
+        "itinerary", "rencana perjalanan", "jadwal", "susun perjalanan",
+        "hari", "malam", "2d", "3d", "4d", "day"
+    ]
+    if any(k in ql for k in itinerary_keywords):
+        return "itinerary"
+    return "recommendation"
+
+SYSTEM_ITINERARY = (
+    "Kamu adalah asisten perencana itinerary Danau Toba.\n"
+    "ATURAN KETAT:\n"
+    "1) Semua nama tempat/objek wisata/hotel/restoran/fasilitas yang kamu sebut harus ada di KONTEKS.\n"
+    "2) Kamu boleh kreatif pada susunan itinerary, tapi fakta (nama, lokasi, fasilitas, harga) hanya dari KONTEKS.\n"
+    "3) Jika KONTEKS tidak cukup, tulis 'data tidak tersedia' dan jelaskan kekurangannya.\n"
+    "4) Jangan mengulang bullet/kalimat yang sama.\n"
+    "FORMAT OUTPUT:\n"
+    "- Judul itinerary\n"
+    "- Hari 1 s.d Hari N (Pagi/Siang/Sore/Malam)\n"
+    "- Catatan penting (maks 5 bullet)\n"
+    "- Sumber: file + page\n"
+)
+
+SYSTEM_RECO = (
+    "Kamu adalah asisten rekomendasi pariwisata Danau Toba.\n"
+    "ATURAN:\n"
+    "1) Semua nama tempat/objek wisata/hotel/restoran/fasilitas yang kamu sebut harus ada di KONTEKS.\n"
+    "2) Boleh menulis narasi yang kreatif dan persuasif, tapi fakta (nama, lokasi, fasilitas, harga) hanya dari KONTEKS.\n"
+    "3) Jangan memformat sebagai itinerary kecuali diminta.\n"
+    "4) Jika KONTEKS tidak cukup, tulis 'data tidak tersedia'.\n"
+    "FORMAT:\n"
+    "- Beri 5–8 rekomendasi yang relevan (atau sesuai permintaan jumlah)\n"
+    "- Tiap item: Nama — Lokasi — Alasan singkat\n"
+    "- Tambahkan paragraf penutup yang ramah (opsional)\n"
+    "- Sumber: file + page\n"
+)
+
 
 def dedup_docs(docs, metas, limit=10):
     out_docs, out_metas = [], []
@@ -106,13 +144,19 @@ def main():
 
     # --- LLM ---
     tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL)
-    model = AutoModelForCausalLM.from_pretrained(
-        LLM_MODEL,
-        dtype="auto",          # ganti dari torch_dtype agar tidak warning
-        device_map="auto"
-    ).eval()
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     LLM_MODEL,
+    #     dtype="auto",          # ganti dari torch_dtype agar tidak warning
+    #     device_map="auto"
+    # ).eval()
 
-    print("✅ RAG Chat siap. Ketik pertanyaan, ENTER kosong untuk keluar.\n")
+    # Using fully GPU (CUDA)
+    model = AutoModelForCausalLM.from_pretrained(
+    LLM_MODEL,
+    dtype="auto"
+    ).to("cuda").eval()
+
+    print("RAG Chat siap. Ketik pertanyaan, ENTER kosong untuk keluar.\n")
 
     while True:
         q = input("User> ").strip()
@@ -129,18 +173,10 @@ def main():
         docs, metas = dedup_docs(docs, metas, limit=10)
         context = build_context(docs, metas)
 
-        system = (
-            "Kamu adalah asisten perencana itinerary Danau Toba.\n"
-            "ATURAN KETAT:\n"
-            "1) Semua nama tempat/objek wisata/hotel/restoran yang kamu sebut harus ada di KONTEKS.\n"
-            "2) Kamu boleh membuat narasi dan susunan itinerary secara kreatif, tapi fakta (nama, lokasi, fasilitas, harga) hanya dari KONTEKS.\n"
-            "3) Jika KONTEKS tidak cukup untuk memenuhi permintaan (mis. kurang tempat), tulis 'data tidak tersedia' dan jelaskan kekurangannya.\n"
-            "FORMAT OUTPUT:\n"
-            "- Judul itinerary\n"
-            "- Hari 1 s.d Hari N (pagi/siang/sore/malam)\n"
-            "- Catatan penting\n"
-            "- Sumber: daftar source_file + page yang dipakai\n"
-        )
+        mode = detect_mode(q)  # detect mode
+
+        # pilih prompt
+        system = SYSTEM_ITINERARY if mode == "itinerary" else SYSTEM_RECO
 
         user = f"KONTEKS:\n{context}\n\nPERTANYAAN:\n{q}"
 
