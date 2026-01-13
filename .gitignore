@@ -1,2 +1,19 @@
-/.venv
-/stores
+# python / env
+.venv/
+__pycache__/
+*.pyc
+
+# outputs training
+outputs/
+checkpoints/
+*.pt
+*.bin
+
+# dataset / cache
+data/
+*.jsonl
+*.parquet
+*.arrow
+
+# logs
+*.log
