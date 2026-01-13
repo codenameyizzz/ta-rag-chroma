@@ -9,103 +9,136 @@ os.makedirs("data/processed", exist_ok=True)
 
 final_dataset = []
 
-print("🚀 Memulai proses konversi data ulasan (3 File Spesifik)...")
+print("🚀 Memulai proses konversi data menjadi format 'RICH & CREATIVE'...")
 
-# Fungsi helper untuk membaca CSV dengan aman
+# Fungsi helper load csv
 def load_csv(filename):
     path = os.path.join(INPUT_DIR, filename)
     if os.path.exists(path):
-        print(f"✅ Membaca file: {filename}")
-        try:
-            return pd.read_csv(path)
-        except Exception as e:
-            print(f"❌ Gagal membaca {filename}: {e}")
-    else:
-        print(f"⚠️ File tidak ditemukan di {path}")
+        return pd.read_csv(path)
     return None
 
-# --- FILE 1: data-resto-hotel-v2.csv ---
-# Kolom: place-name, reviewer-rating, review-text
-df1 = load_csv("data-resto-hotel-v2.csv")
-if df1 is not None:
-    # Filter hanya rating bagus (>= 4) agar model belajar merekomendasikan yang baik
-    # Pastikan kolom rating numerik
-    df1['reviewer-rating'] = pd.to_numeric(df1['reviewer-rating'], errors='coerce')
-    df1 = df1[df1['reviewer-rating'] >= 4.0]
-    
-    count = 0
-    for _, row in df1.iterrows():
-        place = row.get('place-name', '')
-        review = row.get('review-text', '')
-        
-        # Validasi data tidak kosong
-        if pd.isna(place) or pd.isna(review) or str(review).strip() == "":
-            continue
-            
-        # Format Instruksi: User tanya pendapat -> Assistant kasih review
+# --- 1. DATA ATRAKSI (SUMBER UTAMA KECERDASAN) ---
+# Kita buat format yang sangat lengkap: Deskripsi + Lokasi + Harga + Sejarah
+df_atraksi = load_csv("data-gabungan.xlsx - Attractions Info.csv")
+if df_atraksi is not None:
+    print("✅ Memproses Atraksi menjadi format Artikel Lengkap...")
+    for _, row in df_atraksi.iterrows():
+        row = row.fillna('')
+        nama = row.get('Nama Atraksi', '')
+        if not nama: continue
+
+        # AMBIL SEMUA DATA
+        desc = row.get('Deskripsi', 'Tempat ini sangat indah.')
+        loc = row.get('Lokasi', 'Kawasan Danau Toba')
+        price = row.get('Ticket Prices', 'Cek di lokasi')
+        hours = row.get('Opening Hours', '08.00 - 17.00')
+        history = row.get('Historical & Cultural Background', '')
+
+        # --- RAHASIA KREATIFITAS: FORMATTING ---
+        # Kita susun jawaban model supaya panjang dan cantik (Markdown style)
+        rich_response = f"""
+🌟 **Rekomendasi Wisata: {nama}**
+
+📖 **Tentang Tempat Ini:**
+{desc}
+
+📍 **Informasi Penting:**
+- **Lokasi:** {loc}
+- **Jam Buka:** {hours}
+- **Tiket Masuk:** {price}
+
+💡 **Fakta Menarik/Sejarah:**
+{history if history else "Tempat ini memiliki nilai budaya yang kental dengan masyarakat lokal."}
+
+✨ **Kenapa Harus ke Sini?**
+Cocok untuk Anda yang mencari pengalaman otentik di Danau Toba. Jangan lupa bawa kamera untuk mengabadikan momen!
+"""
+        # Masukkan ke dataset
         final_dataset.append({
             "messages": [
-                {"role": "user", "content": f"Bagaimana kualitas penginapan/resto di {place}?"},
-                {"role": "assistant", "content": f"Menurut pengalaman pengunjung: \"{review}\""}
+                {"role": "user", "content": f"Berikan rekomendasi lengkap tentang {nama}"},
+                {"role": "assistant", "content": rich_response.strip()}
             ]
         })
-        count += 1
-    print(f"   -> Berhasil memproses {count} ulasan hotel/resto.")
-
-# --- FILE 2: data-wisata-v2.csv ---
-# Kolom: place-name, reviewer-rating, review-text
-df2 = load_csv("data-wisata-v2.csv")
-if df2 is not None:
-    df2['reviewer-rating'] = pd.to_numeric(df2['reviewer-rating'], errors='coerce')
-    df2 = df2[df2['reviewer-rating'] >= 4.0]
-    
-    count = 0
-    for _, row in df2.iterrows():
-        place = row.get('place-name', '')
-        review = row.get('review-text', '')
         
-        if pd.isna(place) or pd.isna(review) or str(review).strip() == "":
-            continue
-            
+        # Variasi pertanyaan agar model pintar
         final_dataset.append({
             "messages": [
-                {"role": "user", "content": f"Apa kata wisatawan tentang {place}?"},
-                {"role": "assistant", "content": f"Wisatawan memberikan ulasan positif: \"{review}\""}
+                {"role": "user", "content": f"Apa yang menarik di {nama}?"},
+                {"role": "assistant", "content": rich_response.strip()}
             ]
         })
-        count += 1
-    print(f"   -> Berhasil memproses {count} ulasan objek wisata.")
 
-# --- FILE 3: wisata-toba-cleaned.csv ---
-# Kolom: place_name, rating, reviews (Perhatikan beda nama kolom: underscore vs dash)
-df3 = load_csv("wisata-toba-cleaned.csv")
-if df3 is not None:
-    df3['rating'] = pd.to_numeric(df3['rating'], errors='coerce')
-    df3 = df3[df3['rating'] >= 4.0]
+# --- 2. DATA EVENT (FORMAT BERITA) ---
+df_event = load_csv("data-gabungan.xlsx - Event KDT 2025.csv")
+if df_event is not None:
+    print("✅ Memproses Event menjadi format Berita...")
+    for _, row in df_event.iterrows():
+        nama = row.get('Nama Event', '')
+        if not nama: continue
+        
+        jadwal = row.get('Jadwal dan Lokasi Event', '')
+        penyelenggara = row.get('Penyelenggara Event', '')
+        jenis = row.get('Jenis Event', '')
+
+        rich_response = f"""
+🎉 **Event Seru: {nama}**
+
+📅 **Jadwal & Lokasi:**
+{jadwal}
+
+🎭 **Detail Acara:**
+Ini adalah {jenis} yang sangat dinantikan! Acara ini diselenggarakan oleh **{penyelenggara}** dan akan memeriahkan suasana Danau Toba.
+
+📌 **Tips:**
+Pastikan Anda datang lebih awal untuk mendapatkan tempat terbaik!
+"""
+        final_dataset.append({
+            "messages": [
+                {"role": "user", "content": f"Ada event apa saja? Ceritakan tentang {nama}"},
+                {"role": "assistant", "content": rich_response.strip()}
+            ]
+        })
+
+# --- 3. DATA REVIEW (FORMAT TESTIMONI) ---
+# Kita ambil review, tapi kita bungkus dengan kalimat pembuka yang manis
+df_review = load_csv("wisata-toba-cleaned.csv") # Atau file review lainnya
+if df_review is not None:
+    # Filter rating 5
+    if 'rating' in df_review.columns:
+        df_review = df_review[df_review['rating'] == 5.0]
     
-    count = 0
-    for _, row in df3.iterrows():
+    # Ambil sampel saja biar tidak kebanyakan (misal 5000 review terbaik)
+    df_review = df_review.head(5000) 
+    print("✅ Memproses Review menjadi format Testimoni...")
+
+    for _, row in df_review.iterrows():
         place = row.get('place_name', '')
         review = row.get('reviews', '')
-        category = row.get('category', 'Wisata Toba')
-        
-        if pd.isna(place) or pd.isna(review) or str(review).strip() == "":
-            continue
-            
-        # Variasi Prompt: Minta rekomendasi kategori
+        if not place or not review: continue
+
+        rich_response = f"""
+👍 **Ulasan Pengunjung untuk {place}**
+
+Berdasarkan pengalaman wisatawan terbaru, tempat ini sangat direkomendasikan!
+
+🗣️ **Kata Mereka:**
+"{review}"
+
+⭐ **Rating:** 5/5 Sempurna!
+"""
         final_dataset.append({
             "messages": [
-                {"role": "user", "content": f"Berikan rekomendasi tempat {category} yang bagus."},
-                {"role": "assistant", "content": f"Saya merekomendasikan {place}. Pengunjung mengatakan: \"{review}\""}
+                {"role": "user", "content": f"Bagaimana pendapat orang tentang {place}?"},
+                {"role": "assistant", "content": rich_response.strip()}
             ]
         })
-        count += 1
-    print(f"   -> Berhasil memproses {count} data wisata cleaned.")
 
-# --- SIMPAN HASIL ---
-print(f"\n💾 Menyimpan total {len(final_dataset)} baris data latih ke {OUTPUT_FILE}...")
+# --- SIMPAN ---
+print(f"💾 Menyimpan {len(final_dataset)} data 'Rich Format' ke {OUTPUT_FILE}...")
 with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
     for entry in final_dataset:
         f.write(json.dumps(entry) + "\n")
 
-print("🎉 Selesai! Data reviews siap digunakan untuk Training.")
+print("🎉 Selesai! Data sekarang jauh lebih estetik dan informatif.")

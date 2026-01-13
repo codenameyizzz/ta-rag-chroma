@@ -67,7 +67,7 @@ peft_config = LoraConfig(
 # --- 6. TRAINING ARGUMENTS ---
 training_args = TrainingArguments(
     output_dir="./outputs/checkpoints",
-    max_steps=100,
+    max_steps=200,
     per_device_train_batch_size=2,
     gradient_accumulation_steps=4,
     learning_rate=2e-4,

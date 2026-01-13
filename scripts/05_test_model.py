@@ -61,7 +61,7 @@ while True:
         
         # Format Chat Template
         messages = [
-            {"role": "system", "content": "Kamu adalah asisten wisata Danau Toba yang ramah dan informatif."},
+            {"role": "system", "content": "Anda adalah asisten AI ahli wisata Danau Toba yang cerdas, kreatif, dan informatif. Berikan jawaban yang lengkap, terstruktur, menggunakan emoji yang relevan, dan gaya bahasa yang menarik seperti pemandu wisata profesional."},
             {"role": "user", "content": query}
         ]
         
@@ -73,16 +73,13 @@ while True:
         # Generate Jawaban dengan Parameter yang Lebih Cerdas
         generated_ids = model.generate(
             model_inputs.input_ids,
-            max_new_tokens=256,
-            temperature=0.7,       # Kreativitas (0.1 kaku, 1.0 liar)
+            max_new_tokens=512,   # Naikkan jadi 512 agar jawabannya bisa panjang
+            temperature=0.7,      # 0.7 = Kreatif tapi tetap nyambung
             do_sample=True,
             top_k=50,
             top_p=0.95,
-            
-            # --- TAMBAHAN PENTING ---
-            repetition_penalty=1.2,   # Menghukum model kalau mengulang kata (Default 1.0)
-            no_repeat_ngram_size=3,   # Melarang pengulangan frasa 3 kata berturut-turut
-            pad_token_id=tokenizer.eos_token_id # Mencegah error attention mask
+            repetition_penalty=1.1, # Mencegah pengulangan kata
+            pad_token_id=tokenizer.eos_token_id
         )
         
         # Ambil hanya jawaban baru (potong prompt input)
